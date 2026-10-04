@@ -12,6 +12,7 @@ python -m pip check
 python -m unittest discover -s tests -v
 python -m cyberfly check
 python -m cyberfly forage-check
+python -m cyberfly maze-check
 ```
 
 行走检查覆盖 Gymnasium/SB3 接口、随机种子复现、有限数值、回合结束及非法动作。
@@ -23,6 +24,12 @@ python -m cyberfly forage-check
 录像循环的单元测试使用模拟编码器，不替代下方实际 MP4 检查。
 
 这些检查证明具体实现条件，不证明完整生物真实性，也不证明策略改善。
+
+迷宫检查另覆盖三类布局的连通性、唯一最深目标、墙体遮挡、沿通路传播的气味、
+死胡同返回、奖励分项和真实 U 形通路的接触摄入。Apple GPU 不能由普通测试代替验证；
+执行 [迷宫指南](../MAZE.md) 中的自动选择和强制 MPS 短训练，检查参数、梯度和优化器
+动量均在所选设备。自动选择需计入小批量推理、物理耗时和 PPO 更新；基准副本不能
+改变正式模型。四进程并行、跨设备续训和中断后恢复也应在目标 Mac 上检查。
 
 ## 图形与相机
 

@@ -85,6 +85,8 @@ def main():
     subs = parser.add_subparsers(dest="command", required=True)
     from .forage_cli import add_commands
     add_commands(subs)
+    from .maze_cli import add_commands as add_maze_commands
+    add_maze_commands(subs)
     demo = subs.add_parser("walk", help="Run the baseline or a trained checkpoint")
     demo.add_argument("--seconds", type=float, default=2.0,
                       help="Baseline duration; learned policies use their saved task duration")
@@ -111,7 +113,10 @@ def main():
     testing.add_argument("--output", default="outputs/evaluation.json")
     subs.add_parser("check", help="Run environment contract and reproducibility checks")
     args = parser.parse_args()
-    if args.command.startswith("forage"):
+    if args.command.startswith("maze"):
+        from .maze_cli import dispatch
+        dispatch(args)
+    elif args.command.startswith("forage"):
         from .forage_cli import dispatch
         dispatch(args)
     elif args.command == "walk":

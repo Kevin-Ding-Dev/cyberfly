@@ -20,11 +20,14 @@ that evaluates candidates before replacing the current policy.
 - 工程化感觉控制器，以及基于短窗口 GRU 特征的 PPO 修正策略。
 - 候选训练、成对验证、晋升门槛、检查点与中断恢复。
 - 固定场地相机录制，以及按糖源数量和随机种子批量测试。
+- 单糖源平面迷宫、沿通路衰减的双触角气味、墙体遮挡、探索记忆与死胡同返回。
+- 可记录的多巴胺奖励预测误差代理，以及按实际负载选择 CPU / Apple MPS 的迷宫 PPO 训练。
 
 ## 安装
 
 已测试环境：macOS / Apple Silicon（ARM64），Python 3.12，FlyGym 2.1.0，
-MuJoCo 3.9.0。物理仿真与训练默认使用 CPU；不需要 CUDA。
+MuJoCo 3.9.0。原行走/平地觅食训练使用 CPU；新迷宫训练默认实测负载后选择 CPU 或 Apple MPS GPU，
+MuJoCo 物理仍由 CPU 执行，不需要 CUDA。
 其他操作系统和 Python 版本尚未验证。
 
 克隆或下载本仓库后，在包含 `requirements.txt` 的项目根目录运行。
@@ -96,8 +99,23 @@ python -m cyberfly forage-batch --model runs/forage --food-counts 2 5 8 --seeds 
 该命令固定一份模型快照，生成 9 段视频及逐场报告。8 个糖源超出默认训练数量
 范围；这是额外测试，不代表已经证明泛化能力。饱足反馈可能使果蝇留下部分糖源。
 
+## 迷宫与 Apple GPU 训练
+
+每局一个糖源，放在沿通路最远且可达的位置。三类迷宫包含墙体碰撞、视觉遮挡、
+沿通路衰减的气味、探索与返回记忆，以及计算性的多巴胺奖励预测误差。
+
+```bash
+python -m cyberfly maze-train --run runs/maze-mps --config configs/maze.json --device auto --envs 4 --steps 16384
+```
+
+再次运行会恢复最新模型并累计训练；`--steps 0` 持续至 Control+C。
+新任务使用独立检查点。自动模式比较推理、PPO 更新和物理负载，只有 MPS 预计总耗时
+至少降低 10% 才启用；否则选 CPU。可用 `--device cpu` / `--device mps` 手动覆盖。
+物理仿真始终在 CPU。短训练、设备报告、观看与录制见 [迷宫指南](MAZE.md)。
+
 ## 文档
 
+- [迷宫、气味、多巴胺代理与 Apple GPU 训练](MAZE.md)
 - [觅食、持续训练、视频与科研依据](FORAGING.md)
 - [行走与强化学习](docs/WALKING.md)
 - [验证与复现](docs/VALIDATION.md)
@@ -112,6 +130,8 @@ python -m cyberfly forage-batch --model runs/forage --food-counts 2 5 8 --seeds 
 口器和味觉使用功能性邻近检测，没有液体流动或吞咽肌肉模型。
 液滴几何体积、归一化摄入量和内部能量是不同量；摄入速度与饱足未按真实生理标定。
 GRU 只处理最近 4 帧感觉，约 80 ms，不能视为完整果蝇记忆或全脑模型。
+迷宫另用感觉窗口网络和显式探索记忆，视觉包含几何深度射线及墙体遮挡；
+气味场、多巴胺代理和理想化里程计仍未按生理数据校准。
 
 ## 文件与许可证
 

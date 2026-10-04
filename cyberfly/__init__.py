@@ -1,4 +1,4 @@
-"""Cyberfly: a small, CPU-first locomotion learning project."""
+"""Cyberfly: physical fly locomotion, sensory foraging and maze learning."""
 import os
 from pathlib import Path
 

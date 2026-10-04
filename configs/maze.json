@@ -1,0 +1,7 @@
+{
+  "rows": 3,
+  "cols": 3,
+  "kind": "mixed",
+  "episode_seconds": 90.0,
+  "history_frames": 16
+}

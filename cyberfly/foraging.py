@@ -341,6 +341,10 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
         self._sync_food()
         return amount, True
 
+    def _is_escaped(self):
+        return bool(np.linalg.norm(self.position[:2]-self.start_position[:2])
+                    > self.forage_config.arena_radius)
+
     def step(self, action):
         if self.done:
             raise RuntimeError("Reset after a finished episode")
@@ -377,8 +381,7 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
         self.recent_food *= np.exp(-dt/2)
         amount, feeding = self._ingest(motor[2], speed)
         fallen = bool(self.rotation[2,2] < 0.3 or self.position[2] < 0.3)
-        escaped = bool(np.linalg.norm(self.position[:2]-self.start_position[:2])
-                       > self.forage_config.arena_radius)
+        escaped = self._is_escaped()
         finished = bool(np.all(self.food_remaining[:self.food_count] <= 1e-8))
         reward = 5.0*amount - dt*0.02 - dt*0.01*float(np.mean(action**2))
         if fallen or escaped:

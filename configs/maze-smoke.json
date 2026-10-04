@@ -1,0 +1,7 @@
+{
+  "rows": 1,
+  "cols": 2,
+  "kind": "corridor",
+  "episode_seconds": 6.0,
+  "history_frames": 16
+}

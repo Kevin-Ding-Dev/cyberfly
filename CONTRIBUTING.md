@@ -10,6 +10,7 @@ python -m pip check
 python -m unittest discover -s tests -v
 python -m cyberfly check
 python -m cyberfly forage-check
+python -m cyberfly maze-check
 ```
 
 For rendering changes, also record a short video and inspect it locally.
@@ -21,6 +22,11 @@ Include the motivation, affected behavior, verification commands, and remaining
 limitations in your pull request. Changes to sensors, rewards, food geometry,
 units, or termination conditions must update the configuration and documentation.
 Preserve checkpoint compatibility or make incompatible changes explicit.
+For maze training changes, also run the automatic-device and explicit MPS smoke tests in [MAZE.md](MAZE.md),
+including CPU/MPS checkpoint migration and resume. Calibration must not mutate the
+source policy or its optimizer. A device label alone is insufficient: check
+parameter, gradient, and optimizer-moment devices. Keep CPU physics distinct
+from GPU policy training when reporting performance.
 
 Use millimeters and seconds for simulation quantities unless a field explicitly
 states otherwise. Distinguish normalized intake from physical volume or calories.
