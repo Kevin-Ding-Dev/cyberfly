@@ -1,0 +1,8 @@
+{
+  "episode_seconds": 3.0,
+  "food_min": 1,
+  "food_max": 2,
+  "spawn_min": 4.0,
+  "spawn_max": 6.0,
+  "volatile_food_odor": false
+}

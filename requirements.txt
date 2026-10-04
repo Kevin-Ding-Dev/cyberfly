@@ -1,0 +1,2 @@
+flygym[rl]==2.1.0
+mujoco==3.9.0

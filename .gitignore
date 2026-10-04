@@ -1,0 +1,35 @@
+# Local environments, caches, and hidden workspace directories
+/.*/
+!/.github/
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Generated experiments, model checkpoints, recordings, and local data
+/runs/
+/outputs/
+/data/
+/private/
+*.zip
+*.mp4
+*.log
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build products and operating-system metadata
+build/
+dist/
+*.egg-info/
+.DS_Store
+._*
+Thumbs.db

@@ -1,0 +1,9 @@
+Cyberfly
+Copyright 2026 Cyberfly contributors
+
+Licensed under the Apache License, Version 2.0.
+
+Cyberfly uses FlyGym / NeuroMechFly for the fly body and locomotion
+controller, MuJoCo for simulation, and Stable-Baselines3 / PyTorch for
+reinforcement learning. These dependencies are distributed separately
+under their respective licenses. See THIRD_PARTY_NOTICES.md.
