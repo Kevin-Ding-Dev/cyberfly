@@ -7,6 +7,7 @@ Before submitting changes, run the checks relevant to the affected components:
 
 ```bash
 python -m pip check
+python -m unittest discover -s tests -v
 python -m cyberfly check
 python -m cyberfly forage-check
 ```

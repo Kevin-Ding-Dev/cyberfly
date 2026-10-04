@@ -47,11 +47,13 @@ Apple Silicon 上第一条命令应输出 `arm64`。版本快照锁定了用于�
 验证环境：
 
 ```bash
+python -m unittest discover -s tests -v
 python -m cyberfly check
 python -m cyberfly forage-check
 ```
 
-两个命令均应报告 `PASS`。它们实际执行物理仿真，耗时取决于机器与负载。
+单元测试应报告 `OK`，两个仿真检查命令应报告 `PASS`。
+检查包含实际物理仿真，耗时取决于机器与负载。
 
 ## 快速开始
 
@@ -80,6 +82,10 @@ python -m cyberfly forage-loop --run runs/forage --config configs/forage-droplet
 每轮候选通过门槛后才替换当前模型。若仍使用 `initial.zip`，表示还没有候选
 通过验证，不能把训练完成解释为行为改善。再次使用同一目录可继续训练；
 改为 `--rounds 0` 会持续运行至按 Control+C。
+
+默认策略对口器只作小幅修正，无法覆盖基线的开闭决定。若希望网络学习开闭口器，
+新建训练目录并改用 `configs/forage-mouth-control.json`；具体操作与兼容规则见
+[口器自主控制配置](FORAGING.md#口器自主控制配置)。
 
 录制当前通过验证的模型，覆盖不同数量与位置：
 

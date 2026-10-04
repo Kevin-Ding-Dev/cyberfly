@@ -50,21 +50,23 @@ def add_commands(subs):
 
 
 def rollout_forage(args, *, loaded_policy=None, show_summary=True):
-    from .forage_learning import load_policy, resolve_model
+    from .forage_learning import load_policy_snapshot
     if args.viewer and args.video:
         raise ValueError("Use either --viewer or --video")
     camera_distance=getattr(args,"camera_distance",None)
     if camera_distance is not None and (not np.isfinite(camera_distance) or camera_distance<=0):
         raise ValueError("camera-distance must be finite and positive")
     if args.model:
-        checkpoint=resolve_model(args.model)
-        model,config=loaded_policy if loaded_policy is not None else load_policy(checkpoint)
+        model,config,provenance=(loaded_policy if loaded_policy is not None
+                                 else load_policy_snapshot(args.model))
+        checkpoint=provenance["path"]
         training_config=config.to_dict()
         if args.config or args.seconds is not None:
             raise ValueError("A learned policy uses its saved task configuration")
     else:
         model=None
         checkpoint=None
+        provenance=None
         training_config=None
         data=json.loads(Path(args.config).read_text()) if args.config else {}
         if args.seconds is not None:
@@ -98,6 +100,9 @@ def rollout_forage(args, *, loaded_policy=None, show_summary=True):
         env.camera.distance=camera_distance
     viewer=None
     writer=None
+    frame_times=[]
+    video_fps=env.metadata["render_fps"]
+    frame_stride=round(1/(video_fps*env.config.control_dt))
     try:
         obs,_=env.reset(seed=args.seed)
         layout=env.food_positions[:env.food_count].tolist()
@@ -112,7 +117,7 @@ def rollout_forage(args, *, loaded_policy=None, show_summary=True):
         if args.video:
             import imageio.v2 as imageio
             Path(args.video).parent.mkdir(parents=True,exist_ok=True)
-            writer=imageio.get_writer(args.video,fps=25,codec="libx264",macro_block_size=16)
+            writer=imageio.get_writer(args.video,fps=video_fps,codec="libx264",macro_block_size=16)
         started=time.perf_counter()
         info={}
         for step in range(env.max_steps):
@@ -122,8 +127,9 @@ def rollout_forage(args, *, loaded_policy=None, show_summary=True):
             action=(np.zeros(3,dtype=np.float32) if model is None
                     else model.predict(obs,deterministic=True)[0])
             obs,_,terminated,truncated,info=env.step(action)
-            if writer is not None and (step%2==0 or terminated or truncated):
+            if writer is not None and ((step+1)%frame_stride==0 or terminated or truncated):
                 writer.append_data(env.render())
+                frame_times.append(float(info["time_s"]))
             if viewer is not None:
                 viewer.sync()
                 time.sleep(max(0,env.config.control_dt-(time.perf_counter()-tick)))
@@ -140,8 +146,22 @@ def rollout_forage(args, *, loaded_policy=None, show_summary=True):
                 writer_csv.writeheader()
                 writer_csv.writerows({"episode_id":args.seed,**row} for row in env.trajectory)
         write_json(path/"events.json",env.events)
+        video=None
+        if writer is not None:
+            # Finalize the file before reporting a completed recording.
+            writer.close()
+            writer=None
+            duration=float(info["time_s"])
+            video={"fps":video_fps,"frames":len(frame_times),
+                   "duration_s":len(frame_times)/video_fps,
+                   "simulation_duration_s":duration,
+                   "duration_error_s":len(frame_times)/video_fps-duration,
+                   "frame_times_s":frame_times}
         result={"config":config.to_dict(),"seed":args.seed,"food_layout_mm":layout,
+                "trajectory_schema_version":2,
                 "model_checkpoint":str(checkpoint) if checkpoint else None,
+                "model_provenance":provenance,
+                "video":video,
                 "training_config":training_config,
                 "test_overrides":overrides,
                 "food_geometry":config.food_geometry(),
@@ -170,7 +190,7 @@ def rollout_forage(args, *, loaded_policy=None, show_summary=True):
 
 def record_batch(args):
     import torch
-    from .forage_learning import load_policy, resolve_model
+    from .forage_learning import load_policy_snapshot
     from .learning import save_model
 
     if any(seed<0 for seed in args.seeds):
@@ -184,14 +204,16 @@ def record_batch(args):
     if root.exists() and (not root.is_dir() or any(root.iterdir())):
         raise ValueError("Batch output must be new or empty; choose another --output directory")
     torch.set_num_threads(1)
-    source=resolve_model(args.model)
-    model,config=load_policy(source)
+    model,config,source_provenance=load_policy_snapshot(args.model)
     food_profile=getattr(args,"food_profile",None)
     test_config=apply_food_profile(config,food_profile)
     root.mkdir(parents=True,exist_ok=True)
     snapshot=root/"model.zip"
     save_model(model,snapshot)
-    manifest={"status":"recording","source_model":str(source),"snapshot":"model.zip",
+    # Load the saved snapshot once so every clip and its fingerprint refer to it.
+    loaded=load_policy_snapshot(snapshot)
+    manifest={"status":"recording","source_model":source_provenance["path"],"snapshot":"model.zip",
+              "source_model_provenance":source_provenance,"snapshot_provenance":loaded[2],
               "training_timesteps":int(model.num_timesteps),"training_config":config.to_dict(),
               "food_counts":args.food_counts,"seeds":args.seeds,
               "food_profile_override":food_profile,"food_geometry":test_config.food_geometry(),
@@ -207,7 +229,7 @@ def record_batch(args):
                                          food_count=count,viewer=False,video=str(root/f"{name}.mp4"),
                                          output=str(root/name),camera_distance=camera_distance,
                                          food_profile=food_profile)
-                result=rollout_forage(trial,loaded_policy=(model,config),show_summary=False)
+                result=rollout_forage(trial,loaded_policy=loaded,show_summary=False)
                 manifest["clips"].append({"food_count":count,"seed":seed,"video":f"{name}.mp4",
                                           "summary":f"{name}/summary.json","metrics":result["metrics"],
                                           "food_geometry_differs_from_training":result["food_geometry_differs_from_training"],

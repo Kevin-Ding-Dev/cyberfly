@@ -4,7 +4,6 @@ FlyGym model units are mm, mg, seconds. Policy actions modulate two CPG
 amplitudes; they do not replace the 42-DoF low-level controller.
 """
 from dataclasses import asdict, dataclass
-import math
 
 import gymnasium as gym
 import mujoco
@@ -17,6 +16,8 @@ from flygym_demo.complex_terrain import (
     HybridControllerObservation, HybridTurningController, LocomotionAction,
     PreprogrammedSteps, apply_locomotion_action, make_locomotion_fly,
 )
+
+from .config_validation import require_time_multiple, validate_numbers
 
 
 @dataclass(frozen=True)
@@ -31,14 +32,18 @@ class TaskConfig:
     version: int = 1
 
     def __post_init__(self):
+        validate_numbers(self)
+        if self.version != 1:
+            raise ValueError("Unsupported walking configuration version")
         if min(self.physics_dt, self.control_dt, self.episode_seconds) <= 0:
             raise ValueError("Timesteps and episode duration must be positive")
         for value, unit in ((self.control_dt, self.physics_dt),
                             (self.episode_seconds, self.control_dt)):
-            if not math.isclose(value / unit, round(value / unit)):
-                raise ValueError("Time ratios must be integers")
+            require_time_multiple(value, unit)
         if not 0 < self.speed_min <= self.speed_max:
             raise ValueError("Invalid target speed range")
+        if self.heading_range < 0 or not 0 <= self.action_scale <= 1:
+            raise ValueError("heading_range must be nonnegative and action_scale between 0 and 1")
 
     def to_dict(self):
         return asdict(self)

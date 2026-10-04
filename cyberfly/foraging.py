@@ -10,6 +10,7 @@ from flygym.utils.mjcf import add_actuator
 from flygym_demo.complex_terrain import HybridControllerObservation, LocomotionAction, apply_locomotion_action
 
 from .brain import EYE_ANGLES, FRAME_SIZE, SensoryBrain
+from .config_validation import require_time_multiple, validate_numbers
 from .env import CyberflyEnv, TaskConfig
 
 FOOD_PROFILES = ("legacy-patch", "sucrose-droplet")
@@ -31,16 +32,23 @@ class ForageConfig:
     ingestion_rate: float = 2.0
     volatile_food_odor: bool = False
     residual_scale: float = 0.15
+    # None keeps the historical shared scale, including custom old checkpoints.
+    mouth_residual_scale: float | None = None
     # Legacy defaults preserve the geometry of existing checkpoints.
     food_profile: str = "legacy-patch"
     droplet_volume_ul: float = 0.1
     version: int = 1
 
     def __post_init__(self):
+        validate_numbers(self, integers=("food_min", "food_max", "version"),
+                         optional=("mouth_residual_scale",),
+                         exclude=("food_profile", "volatile_food_odor"))
+        if type(self.volatile_food_odor) is not bool:
+            raise ValueError("volatile_food_odor must be a boolean")
+        if self.version != 1:
+            raise ValueError("Unsupported foraging configuration version")
         if self.food_profile not in FOOD_PROFILES:
             raise ValueError("Unknown food profile")
-        if not np.isfinite(self.food_radius) or not np.isfinite(self.droplet_volume_ul):
-            raise ValueError("Food dimensions must be finite")
         if not 1 <= self.food_min <= self.food_max <= 12:
             raise ValueError("Food count must be between 1 and 12")
         if not 0 < self.spawn_min < self.spawn_max < self.arena_radius:
@@ -50,6 +58,9 @@ class ForageConfig:
             raise ValueError("Durations, radii and rates must be positive")
         if self.sensor_noise < 0 or not 0 <= self.residual_scale <= 0.5:
             raise ValueError("Invalid noise/residual scale")
+        if self.mouth_residual_scale is not None and not 0 <= self.mouth_residual_scale <= 2:
+            raise ValueError("mouth_residual_scale must be between 0 and 2")
+        require_time_multiple(self.episode_seconds, TaskConfig().control_dt)
         if self.food_profile == "sucrose-droplet" and self.food_half_height > self.food_radius:
             raise ValueError("Droplet volume/radius must describe a flattened ellipsoid")
 
@@ -72,7 +83,17 @@ class ForageConfig:
                 "intake_units":"Normalized food units; ingestion rate and satiety are not volume-calibrated"}
 
     def to_dict(self):
-        return asdict(self)
+        data = asdict(self)
+        # Preserve exact legacy configuration manifests and saved run metadata.
+        if self.mouth_residual_scale is None:
+            del data["mouth_residual_scale"]
+        return data
+
+    def motor_command(self, base, action):
+        motor = base + self.residual_scale*action
+        if self.mouth_residual_scale is not None:
+            motor[2] = base[2] + self.mouth_residual_scale*action[2]
+        return np.clip(motor, -1, 1)
 
 
 def apply_food_profile(config, profile):
@@ -276,7 +297,7 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
         self.history.extend([self.frame.copy() for _ in range(4)])
         self.trajectory.append({"time_s":0.0,"x_mm":float(self.position[0]),
                                 "y_mm":float(self.position[1]),"heading_rad":self.heading,
-                                "speed_mm_s":0.0,"feeding":0,
+                                "speed_mm_s":0.0,"filtered_speed_mm_s":0.0,"feeding":0,
                                 "mouth_extension_mm":float(self.sim.mj_data.qpos[self.mouth_qpos]),
                                 "energy":self.energy,"consumed":0.0,"mode":"search"})
         self.episode_return = 0.0
@@ -328,7 +349,7 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
             raise ValueError("Expected three finite residual actions")
         action = np.clip(action, -1, 1)
         base = self.brain.act(self.frame, self.config.control_dt)
-        motor = np.clip(base + self.forage_config.residual_scale*action, -1, 1)
+        motor = self.forage_config.motor_command(base, action)
         previous = self.position
         before = self.sim.mj_data.time
         self.sim.mj_data.ctrl[self.mouth_actuator] = 0.4*max(0.0, motor[2])
@@ -369,7 +390,8 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
         self.done = fallen or escaped or finished or self.energy <= 0 or self.elapsed_steps >= self.max_steps
         row = {"time_s": self.elapsed_steps*dt, "x_mm": float(self.position[0]),
                "y_mm": float(self.position[1]), "heading_rad": self.heading,
-               "speed_mm_s": speed, "feeding": int(feeding),
+               "speed_mm_s": float(np.linalg.norm(velocity[:2])),
+               "filtered_speed_mm_s": speed, "feeding": int(feeding),
                "mouth_extension_mm": float(self.sim.mj_data.qpos[self.mouth_qpos]),
                "energy": self.energy, "consumed": self.consumed,
                "mode": self.brain.mode}
@@ -378,6 +400,7 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
                 "food_count": self.food_count, "food_remaining": int(np.sum(self.food_remaining>1e-8))}
         if self.done:
             info["metrics"] = {
+                "schema_version": 2,
                 "return": float(self.episode_return), "consumed": float(self.consumed),
                 "food_count": self.food_count,
                 "consumed_fraction": float(self.consumed/self.food_count),
@@ -386,7 +409,9 @@ contact/ingestion accounting, never passed as coordinates to the actor/brain.
                 "first_ingestion_s": self.first_ingestion_time,
                 "feeding_fraction": self.feeding_time/max(dt,row["time_s"]),
                 "path_length_mm": self.path_length,
-                "mean_speed_mm_s": float(np.mean([r["speed_mm_s"] for r in self.trajectory])),
+                "mean_speed_mm_s": self.path_length/row["time_s"],
+                "mean_filtered_speed_mm_s": float(np.mean([
+                    r["filtered_speed_mm_s"] for r in self.trajectory[1:]])),
                 "task_score": float(self.consumed/self.food_count
                                     -0.02*row["time_s"]/self.config.episode_seconds
                                     -0.0005*self.path_length),

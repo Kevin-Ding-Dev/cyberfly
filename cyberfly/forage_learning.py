@@ -1,6 +1,8 @@
 """Persistent champion/challenger training with explicit, conservative promotion."""
 from contextlib import contextmanager
 import fcntl
+import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import time
@@ -22,18 +24,31 @@ def resolve_model(path):
     if path.is_dir():
         state = json.loads((path/"state.json").read_text())
         path = path/state["champion"]
-    return path
+    if not path.exists() and Path(str(path)+".zip").is_file():
+        path = Path(str(path)+".zip")
+    return path.resolve()
 
 
 def load_policy(path):
-    model = PPO.load(resolve_model(path), device="cpu")
+    model, config, _ = load_policy_snapshot(path)
+    return model, config
+
+
+def load_policy_snapshot(path):
+    """Load and fingerprint the same bytes, even during atomic model promotion."""
+    checkpoint = resolve_model(path)
+    payload = checkpoint.read_bytes()
+    provenance = {"path":str(checkpoint), "sha256":hashlib.sha256(payload).hexdigest(),
+                  "size_bytes":len(payload)}
+    with BytesIO(payload) as stream:
+        model = PPO.load(stream, device="cpu")
     saved = getattr(model,"cyberfly_forage_config",None)
     if saved is None:
         raise ValueError("Expected a foraging checkpoint; walking models use different inputs/actions")
     config = ForageConfig(**saved)
     if config.version != ForageConfig().version:
         raise ValueError("Foraging checkpoint version mismatch")
-    return model,config
+    return model,config,provenance
 
 
 def evaluate_forage(env, model, seeds, reference=None):
@@ -238,10 +253,10 @@ def run_loop(args):
 
 def compare_forage(args):
     torch.set_num_threads(1)
-    model,config=load_policy(args.model)
-    reference=BiologicalReference(args.reference,config) if args.reference else None
     if args.episodes<1:
         raise ValueError("episodes must be positive")
+    model,config,provenance=load_policy_snapshot(args.model)
+    reference=BiologicalReference(args.reference,config) if args.reference else None
     env=ForagingEnv(config)
     try:
         seeds=list(range(args.seed_start,args.seed_start+args.episodes))
@@ -249,7 +264,8 @@ def compare_forage(args):
         learned=evaluate_forage(env,model,seeds,reference)
         write_json(args.output,{"baseline":baseline,"candidate":learned,
                                  "model_timesteps":int(model.num_timesteps),
-                                 "model":str(resolve_model(args.model))})
+                                 "model":provenance["path"],
+                                 "model_provenance":provenance})
         for name,stats in (("baseline",baseline),("candidate",learned)):
             print(name,{k:stats[k] for k in ("mean_consumed_fraction","ate_any_rate",
                                             "fall_rate","escape_rate","biology")},flush=True)
