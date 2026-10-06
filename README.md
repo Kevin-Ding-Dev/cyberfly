@@ -12,6 +12,9 @@ that evaluates candidates before replacing the current policy.
 没有匹配的真实实验数据时，只报告任务表现，不报告生物行为相似度。
 强化学习不保证每轮提高表现。
 
+https://github.com/user-attachments/assets/310326b3-87d1-400f-aad0-058fff53f02b
+
+
 ## 功能
 
 - 42 自由度身体的平地行走、速度跟踪与转向任务。
